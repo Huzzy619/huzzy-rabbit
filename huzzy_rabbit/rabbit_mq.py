@@ -9,8 +9,9 @@ class RabbitMQ:
     # Adding a dummy comment here
 
     @staticmethod
-    async def publish(message_dict: dict, exchange_name: str, routing_key: str, message = None):
+    async def publish(message_dict: dict, exchange_name: str, routing_key: str, message: Message = None, routing_action: str = None):
         if message is None:
+
             message_body = json.dumps(message_dict).encode()
             message = Message(
                 message_body,
@@ -22,7 +23,10 @@ class RabbitMQ:
         except KeyError:
             # exchange = await RabbitMQ.declare_exchange(exchange_name)
             raise Exception(f"Exchange {exchange_name} not found")
-
+        
+        message.headers = {
+            "action": routing_action
+        }
         # Sending the message
         await exchange.publish(message, routing_key=routing_key)
 
@@ -41,7 +45,7 @@ class RabbitMQ:
     async def declare_exchange(exchange_name: str):
         exchange = await RabbitMQ.channel.declare_exchange(
             exchange_name,
-            type=ExchangeType.FANOUT,
+            type=ExchangeType.DIRECT,
             durable=True,
         )
         # Register exchange
@@ -49,7 +53,7 @@ class RabbitMQ:
         return exchange
 
     @staticmethod
-    async def declare_queue_and_bind(queue_name: str, exchange_name: str, app_listener):
+    async def declare_queue_and_bind(queue_name: str, exchange_name: str, app_listener, routing_key: str = None):
         queue = await RabbitMQ.channel.declare_queue(queue_name, durable=True)
  
         try:
@@ -58,12 +62,14 @@ class RabbitMQ:
             # exchange = await RabbitMQ.declare_exchange(exchange_name)
             raise Exception(f"Exchange {exchange_name} not found")
 
+        routing_key = routing_key if routing_key else queue_name
+
         # Binding the queue to the exchange
-        await queue.bind(exchange)
+        await queue.bind(exchange, routing_key)
         await queue.consume(app_listener)
 
     @staticmethod
-    async def declare_queue(queue_name: str, exchange_name: str):
+    async def declare_queue(queue_name: str, exchange_name: str, routing_key: str = None):
         queue = await RabbitMQ.channel.declare_queue(queue_name, durable=True)
 
         try:
@@ -71,7 +77,10 @@ class RabbitMQ:
         except KeyError:
             # exchange = await RabbitMQ.declare_exchange(exchange_name)
             raise Exception(f"Exchange {exchange_name} not found")
-        await queue.bind(exchange)
+        
+        routing_key = routing_key if routing_key else queue_name
+
+        await queue.bind(exchange, routing_key)
         
     async def remote_procedure_call(queue_name: str, on_response: Callable, correlation_id: str, message_dict: dict):
         message_body = json.dumps(message_dict).encode()
